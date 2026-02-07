@@ -1,0 +1,53 @@
+services:
+  junuvia-mongodb:
+    image: mongo:7
+    container_name: junuvia-mongodb-dev
+    ports:
+      - "27017:27017"
+    volumes:
+      - junuvia_mongodb_data:/data/db
+
+  junuvia-minio:
+    image: minio/minio
+    container_name: junuvia-minio-dev
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: junuvia_dev
+      MINIO_ROOT_PASSWORD: junuvia_dev
+    volumes:
+      - junuvia_minio_data:/data
+    command: server /data --console-address ":9001"
+
+  junuvia-minio-setup:
+    image: minio/mc
+    container_name: junuvia-minio-setup
+    depends_on:
+      - junuvia-minio
+    entrypoint: >
+      /bin/sh -c "
+        # Wait until MinIO is responding
+        until mc alias set junuvia http://junuvia-minio-dev:9000 junuvia_dev junuvia_dev; do
+          echo 'Waiting for MinIO...';
+          sleep 2;
+        done;
+
+        echo 'Connected to MinIO';
+
+        # Only create the bucket if it doesn't exist
+        if ! mc ls junuvia/junuvia > /dev/null 2>&1; then
+          echo 'Bucket not found. Creating...';
+          mc mb junuvia/junuvia;
+          mc anonymous set download junuvia/junuvia;
+          echo 'Bucket created and policy set to public';
+        else
+          echo 'Bucket already exists';
+        fi;
+
+        tail -f /dev/null;
+      "
+
+volumes:
+  junuvia_mongodb_data:
+  junuvia_minio_data:
