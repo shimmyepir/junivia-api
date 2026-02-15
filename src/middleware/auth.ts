@@ -73,6 +73,6 @@ export const generateToken = (user: IUser): string => {
       role: user.role,
     },
     env.JWT_SECRET,
-    { expiresIn: env.JWT_EXPIRES_IN },
+    { expiresIn: "1y" },
   );
 };

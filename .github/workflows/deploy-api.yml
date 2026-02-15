@@ -43,7 +43,7 @@ on:
           if pm2 list | grep -q "server"; then
             pm2 reload server
           else
-            pm2 start build/index.js --name server -i max
+            pm2 start dist/index.js --name server -i max
           fi
       - run: |
           export NVM_DIR="$HOME/.nvm"
