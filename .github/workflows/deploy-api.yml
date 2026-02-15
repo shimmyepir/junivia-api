@@ -1,0 +1,51 @@
+name: Production Deploy
+
+on:
+  push:
+    branches: [main]
+
+  deploy_server:
+    needs: run_migrations
+    runs-on: ${{ matrix.runner }}
+
+    strategy:
+      matrix:
+        node-version: [24.x]
+        runner: [junivia-api-1]
+
+    steps:
+      - uses: actions/checkout@v2
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v1
+        with:
+          node-version: ${{ matrix.node-version }}
+      - name: Create .env file
+        uses: ozaytsev86/create-env-file@v1
+        with:
+          ENV_PORT: 8000
+          ENV_NODE_ENV: production
+          ENV_MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          ENV_JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          ENV_JWT_EXPIRES_IN: 1y
+          ENV_AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          ENV_AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          ENV_AWS_REGION: ${{ secrets.AWS_REGION }}
+          ENV_AWS_BUCKET_NAME: ${{ secrets.AWS_BUCKET_NAME }}
+          ENV_AWS_ENDPOINT: ${{ secrets.AWS_ENDPOINT }}
+          ENV_AWS_BUCKET_URL: ${{ secrets.AWS_BUCKET_URL }}
+
+      - run: npm i
+      - run: npm run build
+      - run: |
+          # Source NVM to ensure PM2 is in PATH (runner runs as tribe user)
+          export NVM_DIR="$HOME/.nvm"
+          [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+          if pm2 list | grep -q "server"; then
+            pm2 reload server
+          else
+            pm2 start build/index.js --name server -i max
+          fi
+      - run: |
+          export NVM_DIR="$HOME/.nvm"
+          [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+          pm2 save
