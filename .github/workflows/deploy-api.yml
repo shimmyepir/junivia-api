@@ -36,16 +36,4 @@ jobs:
 
       - run: npm i
       - run: npm run build
-      - run: |
-          # Source NVM to ensure PM2 is in PATH (runner runs as tribe user)
-          export NVM_DIR="$HOME/.nvm"
-          [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
-          if pm2 describe server > /dev/null 2>&1; then
-            pm2 reload server
-          else
-            pm2 start dist/index.js --name server -i max
-          fi
-      - run: |
-          export NVM_DIR="$HOME/.nvm"
-          [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
-          pm2 save
+      - run: pm2 reload server
