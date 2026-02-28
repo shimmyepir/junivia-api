@@ -10,6 +10,7 @@ import {
   puzzlesRouter,
   progressRouter,
   adminPuzzlesRouter,
+  subscriptionRouter,
 } from "./routes/index.js";
 
 const app = express();
@@ -31,6 +32,7 @@ app.use("/auth", authRouter);
 app.use("/puzzles", puzzlesRouter);
 app.use("/progress", progressRouter);
 app.use("/admin/puzzles", adminPuzzlesRouter);
+app.use("/subscription", subscriptionRouter);
 
 // Error handler
 app.use(

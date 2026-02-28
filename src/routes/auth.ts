@@ -63,6 +63,7 @@ router.post("/register", async (req: Request, res: Response): Promise<void> => {
         id: user._id,
         email: user.email,
         role: user.role,
+        subscriptionTier: user.subscriptionTier || "free",
       },
       token,
     });
@@ -118,6 +119,7 @@ router.post("/login", async (req: Request, res: Response): Promise<void> => {
         id: user._id,
         email: user.email,
         role: user.role,
+        subscriptionTier: user.subscriptionTier || "free",
       },
       token,
     });
@@ -147,6 +149,7 @@ router.get(
           email: req.user.email,
           role: req.user.role,
           isActive: req.user.isActive,
+          subscriptionTier: req.user.subscriptionTier || "free",
           createdAt: req.user.createdAt,
         },
       });

@@ -5,7 +5,11 @@ import { Puzzle } from "../../models/Puzzle.js";
 import { UserProgress } from "../../models/UserProgress.js";
 import { authenticate, AuthRequest } from "../../middleware/auth.js";
 import { requireAdmin } from "../../middleware/admin.js";
-import { uploadImage, deleteImage } from "../../services/s3.service.js";
+import {
+  uploadImage,
+  uploadAudio,
+  deleteImage,
+} from "../../services/s3.service.js";
 
 const router = Router();
 
@@ -13,17 +17,36 @@ const router = Router();
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB limit
+    fileSize: 200 * 1024 * 1024, // 200MB limit (audiobooks can be large)
   },
   fileFilter: (_req, file, cb) => {
-    const allowedTypes = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
+    const imageTypes = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
+    const audioTypes = [
+      "audio/mpeg",
+      "audio/mp4",
+      "audio/wav",
+      "audio/ogg",
+      "audio/x-m4a",
+      "audio/m4a",
+      "audio/aac",
+    ];
+    const allowedTypes = [...imageTypes, ...audioTypes];
     if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error("Invalid file type. Only JPEG, PNG, and WebP are allowed."));
+      cb(
+        new Error(
+          "Invalid file type. Only JPEG, PNG, WebP images and MP3, M4A, WAV, OGG audio are allowed.",
+        ),
+      );
     }
   },
 });
+
+const uploadFields = upload.fields([
+  { name: "image", maxCount: 1 },
+  { name: "audiobook", maxCount: 1 },
+]);
 
 // Apply auth middleware to all routes
 router.use(authenticate);
@@ -36,6 +59,7 @@ const createPuzzleSchema = z.object({
   gridCols: z.coerce.number().min(2).max(20),
   levelOrder: z.coerce.number().min(1),
   isActive: z.coerce.boolean().optional().default(true),
+  spotifyPlaylistUrl: z.string().url().optional().or(z.literal("")),
 });
 
 const updatePuzzleSchema = z.object({
@@ -44,6 +68,7 @@ const updatePuzzleSchema = z.object({
   gridCols: z.coerce.number().min(2).max(20).optional(),
   levelOrder: z.coerce.number().min(1).optional(),
   isActive: z.coerce.boolean().optional(),
+  spotifyPlaylistUrl: z.string().url().optional().or(z.literal("")),
 });
 
 /**
@@ -87,10 +112,16 @@ router.get("/:id", async (req: AuthRequest, res: Response): Promise<void> => {
  */
 router.post(
   "/",
-  upload.single("image"),
+  uploadFields,
   async (req: AuthRequest, res: Response): Promise<void> => {
     try {
-      if (!req.file) {
+      const files = req.files as {
+        [fieldname: string]: Express.Multer.File[];
+      };
+      const imageFile = files?.image?.[0];
+      const audiobookFile = files?.audiobook?.[0];
+
+      if (!imageFile) {
         res.status(400).json({ error: "Image is required" });
         return;
       }
@@ -105,7 +136,7 @@ router.post(
         return;
       }
 
-      const { title, gridRows, gridCols, levelOrder, isActive } =
+      const { title, gridRows, gridCols, levelOrder, isActive, spotifyPlaylistUrl } =
         validation.data;
 
       // Check if levelOrder is unique
@@ -116,7 +147,7 @@ router.post(
       }
 
       // Upload image to S3
-      const { url, key } = await uploadImage(req.file);
+      const { url, key } = await uploadImage(imageFile);
 
       // Create puzzle
       const puzzle = new Puzzle({
@@ -127,7 +158,15 @@ router.post(
         gridCols,
         levelOrder,
         isActive,
+        spotifyPlaylistUrl: spotifyPlaylistUrl || undefined,
       });
+
+      // Upload audiobook if provided
+      if (audiobookFile) {
+        const audioResult = await uploadAudio(audiobookFile);
+        puzzle.audiobookUrl = audioResult.url;
+        puzzle.audiobookKey = audioResult.key;
+      }
 
       await puzzle.save();
 
@@ -148,7 +187,7 @@ router.post(
  */
 router.put(
   "/:id",
-  upload.single("image"),
+  uploadFields,
   async (req: AuthRequest, res: Response): Promise<void> => {
     try {
       const puzzle = await Puzzle.findById(req.params.id);
@@ -169,6 +208,11 @@ router.put(
       }
 
       const updates = validation.data;
+      const files = req.files as {
+        [fieldname: string]: Express.Multer.File[];
+      };
+      const imageFile = files?.image?.[0];
+      const audiobookFile = files?.audiobook?.[0];
 
       // Check if levelOrder is being changed and is unique
       if (updates.levelOrder && updates.levelOrder !== puzzle.levelOrder) {
@@ -185,14 +229,21 @@ router.put(
       }
 
       // If new image provided, upload and delete old one
-      if (req.file) {
-        const { url, key } = await uploadImage(req.file);
-
-        // Delete old image from S3
+      if (imageFile) {
+        const { url, key } = await uploadImage(imageFile);
         await deleteImage(puzzle.imageKey);
-
         puzzle.imageUrl = url;
         puzzle.imageKey = key;
+      }
+
+      // If new audiobook provided, upload and delete old one
+      if (audiobookFile) {
+        if (puzzle.audiobookKey) {
+          await deleteImage(puzzle.audiobookKey);
+        }
+        const audioResult = await uploadAudio(audiobookFile);
+        puzzle.audiobookUrl = audioResult.url;
+        puzzle.audiobookKey = audioResult.key;
       }
 
       // Apply other updates
@@ -202,6 +253,8 @@ router.put(
       if (updates.levelOrder !== undefined)
         puzzle.levelOrder = updates.levelOrder;
       if (updates.isActive !== undefined) puzzle.isActive = updates.isActive;
+      if (updates.spotifyPlaylistUrl !== undefined)
+        puzzle.spotifyPlaylistUrl = updates.spotifyPlaylistUrl || undefined;
 
       await puzzle.save();
 
@@ -233,6 +286,11 @@ router.delete(
 
       // Delete image from S3
       await deleteImage(puzzle.imageKey);
+
+      // Delete audiobook from S3 if exists
+      if (puzzle.audiobookKey) {
+        await deleteImage(puzzle.audiobookKey);
+      }
 
       // Delete all user progress for this puzzle
       await UserProgress.deleteMany({ puzzleId: puzzle._id });

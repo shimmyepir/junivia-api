@@ -37,6 +37,29 @@ export const uploadImage = async (
 };
 
 /**
+ * Upload an audio file to S3
+ */
+export const uploadAudio = async (
+  file: Express.Multer.File,
+): Promise<UploadResult> => {
+  const fileExtension = file.originalname.split(".").pop() || "mp3";
+  const key = `audiobooks/${crypto.randomUUID()}.${fileExtension}`;
+
+  const command = new PutObjectCommand({
+    Bucket: S3_BUCKET,
+    Key: key,
+    Body: file.buffer,
+    ContentType: file.mimetype,
+  });
+
+  await s3Client.send(command);
+
+  const url = `${env.AWS_BUCKET_URL}/${key}`;
+
+  return { url, key };
+};
+
+/**
  * Delete an image from S3
  */
 export const deleteImage = async (key: string): Promise<void> => {

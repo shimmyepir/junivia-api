@@ -7,6 +7,8 @@ export interface IUser extends Document {
   passwordHash: string;
   role: "user" | "admin";
   isActive: boolean;
+  subscriptionTier: "free" | "pro";
+  revenuecatId?: string;
   createdAt: Date;
   updatedAt: Date;
   comparePassword(candidatePassword: string): Promise<boolean>;
@@ -35,6 +37,14 @@ const userSchema = new Schema<IUser>(
     isActive: {
       type: Boolean,
       default: false,
+    },
+    subscriptionTier: {
+      type: String,
+      enum: ["free", "pro"],
+      default: "free",
+    },
+    revenuecatId: {
+      type: String,
     },
   },
   {

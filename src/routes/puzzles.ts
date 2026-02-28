@@ -1,6 +1,7 @@
 import { Router, Response } from "express";
 import { Puzzle } from "../models/Puzzle.js";
 import { UserProgress } from "../models/UserProgress.js";
+import { User } from "../models/User.js";
 import { authenticate, AuthRequest } from "../middleware/auth.js";
 
 const router = Router();
@@ -59,6 +60,8 @@ router.get("/", async (req: AuthRequest, res: Response): Promise<void> => {
         gridRows: puzzle.gridRows,
         gridCols: puzzle.gridCols,
         levelOrder: puzzle.levelOrder,
+        spotifyPlaylistUrl: puzzle.spotifyPlaylistUrl || null,
+        audiobookUrl: puzzle.audiobookUrl || null,
         isUnlocked,
         isCompleted: progress?.isCompleted ?? false,
         progress: progress
@@ -127,6 +130,36 @@ router.get("/:id", async (req: AuthRequest, res: Response): Promise<void> => {
       puzzleId: puzzle._id,
     }).lean();
 
+    // Daily limit check for free users
+    const user = await User.findById(userId).lean();
+    const subscriptionTier = user?.subscriptionTier || "free";
+
+    if (subscriptionTier === "free") {
+      // Check if user already has progress on this puzzle (allow continuing)
+      const hasExistingProgress =
+        progress && progress.placedPieceIds.length > 0;
+
+      if (!hasExistingProgress) {
+        // Check how many NEW puzzles the user started today
+        const startOfDay = new Date();
+        startOfDay.setUTCHours(0, 0, 0, 0);
+
+        const puzzlesStartedToday = await UserProgress.countDocuments({
+          userId,
+          createdAt: { $gte: startOfDay },
+        });
+
+        if (puzzlesStartedToday >= 1) {
+          res.status(403).json({
+            error: "daily_limit",
+            message:
+              "Free users can only play 1 puzzle per day. Upgrade to Pro for unlimited puzzles!",
+          });
+          return;
+        }
+      }
+    }
+
     res.json({
       puzzle: {
         id: puzzle._id,
@@ -135,6 +168,8 @@ router.get("/:id", async (req: AuthRequest, res: Response): Promise<void> => {
         gridRows: puzzle.gridRows,
         gridCols: puzzle.gridCols,
         levelOrder: puzzle.levelOrder,
+        spotifyPlaylistUrl: puzzle.spotifyPlaylistUrl || null,
+        audiobookUrl: puzzle.audiobookUrl || null,
       },
       progress: progress
         ? {

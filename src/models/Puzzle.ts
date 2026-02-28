@@ -9,6 +9,9 @@ export interface IPuzzle extends Document {
   gridCols: number;
   levelOrder: number;
   isActive: boolean;
+  spotifyPlaylistUrl?: string;
+  audiobookUrl?: string;
+  audiobookKey?: string; // S3 object key for deletion
   createdAt: Date;
   updatedAt: Date;
 }
@@ -50,6 +53,16 @@ const puzzleSchema = new Schema<IPuzzle>(
     isActive: {
       type: Boolean,
       default: true,
+    },
+    spotifyPlaylistUrl: {
+      type: String,
+      trim: true,
+    },
+    audiobookUrl: {
+      type: String,
+    },
+    audiobookKey: {
+      type: String,
     },
   },
   {
