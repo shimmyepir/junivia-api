@@ -99,10 +99,10 @@ router.post("/login", async (req: Request, res: Response): Promise<void> => {
     }
 
     // Check if account is active
-    if (!user.isActive) {
-      res.status(403).json({ error: "Account is not activated" });
-      return;
-    }
+    // if (!user.isActive) {
+    //   res.status(403).json({ error: "Account is not activated" });
+    //   return;
+    // }
 
     // Check password
     const isValidPassword = await user.comparePassword(password);

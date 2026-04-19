@@ -2,6 +2,7 @@ import { Router, Response } from "express";
 import { z } from "zod";
 import multer from "multer";
 import { Puzzle } from "../../models/Puzzle.js";
+import { PuzzleGroup } from "../../models/PuzzleGroup.js";
 import { UserProgress } from "../../models/UserProgress.js";
 import { authenticate, AuthRequest } from "../../middleware/auth.js";
 import { requireAdmin } from "../../middleware/admin.js";
@@ -45,6 +46,7 @@ const upload = multer({
 
 const uploadFields = upload.fields([
   { name: "image", maxCount: 1 },
+  { name: "sectionImages", maxCount: 25 },
   { name: "audiobook", maxCount: 1 },
 ]);
 
@@ -60,6 +62,7 @@ const createPuzzleSchema = z.object({
   levelOrder: z.coerce.number().min(1),
   isActive: z.coerce.boolean().optional().default(true),
   spotifyPlaylistUrl: z.string().url().optional().or(z.literal("")),
+  splitCount: z.coerce.number().min(1).max(5).optional().default(1),
 });
 
 const updatePuzzleSchema = z.object({
@@ -136,44 +139,133 @@ router.post(
         return;
       }
 
-      const { title, gridRows, gridCols, levelOrder, isActive, spotifyPlaylistUrl } =
+      const { title, gridRows, gridCols, levelOrder, isActive, spotifyPlaylistUrl, splitCount } =
         validation.data;
 
-      // Check if levelOrder is unique
-      const existingLevel = await Puzzle.findOne({ levelOrder });
-      if (existingLevel) {
-        res.status(409).json({ error: `Level ${levelOrder} already exists` });
-        return;
+      // Parse section position arrays (sent as JSON strings from FormData)
+      const sectionRows: number[] = req.body.sectionRows
+        ? JSON.parse(req.body.sectionRows)
+        : [];
+      const sectionCols: number[] = req.body.sectionCols
+        ? JSON.parse(req.body.sectionCols)
+        : [];
+
+      const sectionImages = files?.sectionImages || [];
+
+      if (splitCount > 1) {
+        // --- Multi-level puzzle creation ---
+        const totalSections = splitCount * splitCount;
+
+        if (sectionImages.length !== totalSections) {
+          res.status(400).json({
+            error: `Expected ${totalSections} section images, got ${sectionImages.length}`,
+          });
+          return;
+        }
+
+        // Find the next available levelOrder range
+        const maxLevel = await Puzzle.findOne()
+          .sort({ levelOrder: -1 })
+          .select("levelOrder")
+          .lean();
+        const startingLevel = (maxLevel?.levelOrder ?? 0) + 1;
+
+        // Upload original image to S3
+        const originalUpload = await uploadImage(imageFile);
+
+        // Upload audiobook if provided
+        let audiobookData: { url: string; key: string } | null = null;
+        if (audiobookFile) {
+          audiobookData = await uploadAudio(audiobookFile);
+        }
+
+        // Create PuzzleGroup
+        const group = new PuzzleGroup({
+          title,
+          originalImageUrl: originalUpload.url,
+          originalImageKey: originalUpload.key,
+          splitCount,
+          gridRows,
+          gridCols,
+          isActive,
+          spotifyPlaylistUrl: spotifyPlaylistUrl || undefined,
+          audiobookUrl: audiobookData?.url,
+          audiobookKey: audiobookData?.key,
+        });
+        await group.save();
+
+        // Upload each section image and create puzzles
+        const puzzleDocs = [];
+        for (let i = 0; i < sectionImages.length; i++) {
+          const sectionUpload = await uploadImage(sectionImages[i]!);
+          const row = sectionRows[i] ?? 0;
+          const col = sectionCols[i] ?? 0;
+          const sectionNumber = row * splitCount + col + 1;
+
+          puzzleDocs.push({
+            title: `${title} (${sectionNumber}/${totalSections})`,
+            imageUrl: sectionUpload.url,
+            imageKey: sectionUpload.key,
+            gridRows,
+            gridCols,
+            levelOrder: startingLevel + i,
+            isActive,
+            spotifyPlaylistUrl: spotifyPlaylistUrl || undefined,
+            audiobookUrl: audiobookData?.url,
+            audiobookKey: audiobookData?.key,
+            puzzleGroupId: group._id,
+            sectionRow: row,
+            sectionCol: col,
+            sectionTotal: splitCount,
+          });
+        }
+
+        const createdPuzzles = await Puzzle.insertMany(puzzleDocs);
+
+        res.status(201).json({
+          message: `Multi-level puzzle created: ${totalSections} sections`,
+          group,
+          puzzles: createdPuzzles,
+        });
+      } else {
+        // --- Single puzzle creation (existing behavior) ---
+
+        // Check if levelOrder is unique
+        const existingLevel = await Puzzle.findOne({ levelOrder });
+        if (existingLevel) {
+          res.status(409).json({ error: `Level ${levelOrder} already exists` });
+          return;
+        }
+
+        // Upload image to S3
+        const { url, key } = await uploadImage(imageFile);
+
+        // Create puzzle
+        const puzzle = new Puzzle({
+          title,
+          imageUrl: url,
+          imageKey: key,
+          gridRows,
+          gridCols,
+          levelOrder,
+          isActive,
+          spotifyPlaylistUrl: spotifyPlaylistUrl || undefined,
+        });
+
+        // Upload audiobook if provided
+        if (audiobookFile) {
+          const audioResult = await uploadAudio(audiobookFile);
+          puzzle.audiobookUrl = audioResult.url;
+          puzzle.audiobookKey = audioResult.key;
+        }
+
+        await puzzle.save();
+
+        res.status(201).json({
+          message: "Puzzle created successfully",
+          puzzle,
+        });
       }
-
-      // Upload image to S3
-      const { url, key } = await uploadImage(imageFile);
-
-      // Create puzzle
-      const puzzle = new Puzzle({
-        title,
-        imageUrl: url,
-        imageKey: key,
-        gridRows,
-        gridCols,
-        levelOrder,
-        isActive,
-        spotifyPlaylistUrl: spotifyPlaylistUrl || undefined,
-      });
-
-      // Upload audiobook if provided
-      if (audiobookFile) {
-        const audioResult = await uploadAudio(audiobookFile);
-        puzzle.audiobookUrl = audioResult.url;
-        puzzle.audiobookKey = audioResult.key;
-      }
-
-      await puzzle.save();
-
-      res.status(201).json({
-        message: "Puzzle created successfully",
-        puzzle,
-      });
     } catch (error) {
       console.error("Create puzzle error:", error);
       res.status(500).json({ error: "Failed to create puzzle" });
@@ -284,21 +376,47 @@ router.delete(
         return;
       }
 
-      // Delete image from S3
-      await deleteImage(puzzle.imageKey);
+      if (puzzle.puzzleGroupId) {
+        // Grouped puzzle: delete entire group
+        const groupPuzzles = await Puzzle.find({
+          puzzleGroupId: puzzle.puzzleGroupId,
+        });
 
-      // Delete audiobook from S3 if exists
-      if (puzzle.audiobookKey) {
-        await deleteImage(puzzle.audiobookKey);
+        // Delete all section images from S3
+        for (const p of groupPuzzles) {
+          await deleteImage(p.imageKey);
+          await UserProgress.deleteMany({ puzzleId: p._id });
+        }
+
+        // Delete the group's original image and audiobook
+        const group = await PuzzleGroup.findById(puzzle.puzzleGroupId);
+        if (group) {
+          await deleteImage(group.originalImageKey);
+          if (group.audiobookKey) {
+            await deleteImage(group.audiobookKey);
+          }
+          await group.deleteOne();
+        }
+
+        // Delete all puzzles in the group
+        await Puzzle.deleteMany({ puzzleGroupId: puzzle.puzzleGroupId });
+
+        res.json({
+          message: `Puzzle group deleted: ${groupPuzzles.length} sections removed`,
+        });
+      } else {
+        // Standalone puzzle: existing behavior
+        await deleteImage(puzzle.imageKey);
+
+        if (puzzle.audiobookKey) {
+          await deleteImage(puzzle.audiobookKey);
+        }
+
+        await UserProgress.deleteMany({ puzzleId: puzzle._id });
+        await puzzle.deleteOne();
+
+        res.json({ message: "Puzzle deleted successfully" });
       }
-
-      // Delete all user progress for this puzzle
-      await UserProgress.deleteMany({ puzzleId: puzzle._id });
-
-      // Delete puzzle
-      await puzzle.deleteOne();
-
-      res.json({ message: "Puzzle deleted successfully" });
     } catch (error) {
       console.error("Delete puzzle error:", error);
       res.status(500).json({ error: "Failed to delete puzzle" });

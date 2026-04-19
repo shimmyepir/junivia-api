@@ -12,6 +12,10 @@ export interface IPuzzle extends Document {
   spotifyPlaylistUrl?: string;
   audiobookUrl?: string;
   audiobookKey?: string; // S3 object key for deletion
+  puzzleGroupId?: mongoose.Types.ObjectId;
+  sectionRow?: number;
+  sectionCol?: number;
+  sectionTotal?: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -64,6 +68,23 @@ const puzzleSchema = new Schema<IPuzzle>(
     audiobookKey: {
       type: String,
     },
+    puzzleGroupId: {
+      type: Schema.Types.ObjectId,
+      ref: 'PuzzleGroup',
+      default: null,
+    },
+    sectionRow: {
+      type: Number,
+      default: null,
+    },
+    sectionCol: {
+      type: Number,
+      default: null,
+    },
+    sectionTotal: {
+      type: Number,
+      default: null,
+    },
   },
   {
     timestamps: true,
@@ -72,6 +93,7 @@ const puzzleSchema = new Schema<IPuzzle>(
 
 // Index for efficient queries
 puzzleSchema.index({ isActive: 1, levelOrder: 1 });
+puzzleSchema.index({ puzzleGroupId: 1 });
 
 export const Puzzle = mongoose.model<IPuzzle>('Puzzle', puzzleSchema);
 

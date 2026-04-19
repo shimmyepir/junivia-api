@@ -1,5 +1,6 @@
 import { Router, Response } from "express";
 import { Puzzle } from "../models/Puzzle.js";
+import { PuzzleGroup } from "../models/PuzzleGroup.js";
 import { UserProgress } from "../models/UserProgress.js";
 import { User } from "../models/User.js";
 import { authenticate, AuthRequest } from "../middleware/auth.js";
@@ -45,6 +46,19 @@ router.get("/", async (req: AuthRequest, res: Response): Promise<void> => {
         .filter(Boolean),
     );
 
+    // Fetch PuzzleGroup data for grouped puzzles
+    const groupIds = [
+      ...new Set(
+        puzzles
+          .filter((p) => p.puzzleGroupId)
+          .map((p) => p.puzzleGroupId!.toString()),
+      ),
+    ];
+    const groups = groupIds.length
+      ? await PuzzleGroup.find({ _id: { $in: groupIds } }).lean()
+      : [];
+    const groupMap = new Map(groups.map((g) => [g._id.toString(), g]));
+
     // Build response with unlock status
     const puzzlesWithStatus = puzzles.map((puzzle) => {
       const progress = progressMap.get(puzzle._id.toString());
@@ -52,6 +66,10 @@ router.get("/", async (req: AuthRequest, res: Response): Promise<void> => {
       // Level 1 is always unlocked, others need previous level completed
       const isUnlocked =
         puzzle.levelOrder === 1 || completedLevels.has(puzzle.levelOrder - 1);
+
+      const group = puzzle.puzzleGroupId
+        ? groupMap.get(puzzle.puzzleGroupId.toString())
+        : null;
 
       return {
         id: puzzle._id,
@@ -70,6 +88,11 @@ router.get("/", async (req: AuthRequest, res: Response): Promise<void> => {
               completedAt: progress.completedAt,
             }
           : null,
+        puzzleGroupId: puzzle.puzzleGroupId || null,
+        sectionRow: puzzle.sectionRow ?? null,
+        sectionCol: puzzle.sectionCol ?? null,
+        sectionTotal: puzzle.sectionTotal ?? null,
+        originalImageUrl: group?.originalImageUrl || null,
       };
     });
 
@@ -160,6 +183,15 @@ router.get("/:id", async (req: AuthRequest, res: Response): Promise<void> => {
       }
     }
 
+    // Fetch group data if this is a grouped puzzle
+    let originalImageUrl: string | null = null;
+    if (puzzle.puzzleGroupId) {
+      const group = await PuzzleGroup.findById(puzzle.puzzleGroupId).lean();
+      if (group) {
+        originalImageUrl = group.originalImageUrl;
+      }
+    }
+
     res.json({
       puzzle: {
         id: puzzle._id,
@@ -170,6 +202,11 @@ router.get("/:id", async (req: AuthRequest, res: Response): Promise<void> => {
         levelOrder: puzzle.levelOrder,
         spotifyPlaylistUrl: puzzle.spotifyPlaylistUrl || null,
         audiobookUrl: puzzle.audiobookUrl || null,
+        puzzleGroupId: puzzle.puzzleGroupId || null,
+        sectionRow: puzzle.sectionRow ?? null,
+        sectionCol: puzzle.sectionCol ?? null,
+        sectionTotal: puzzle.sectionTotal ?? null,
+        originalImageUrl,
       },
       progress: progress
         ? {
