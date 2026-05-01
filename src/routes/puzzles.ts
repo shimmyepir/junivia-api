@@ -32,18 +32,14 @@ router.get("/", async (req: AuthRequest, res: Response): Promise<void> => {
     );
 
     // Determine which levels are unlocked
-    // Level 1 is always unlocked
-    // Other levels are unlocked if the previous level is completed
-    const completedLevels = new Set(
+    // The first active puzzle is always unlocked
+    // Other puzzles are unlocked if the previous active puzzle is completed.
+    // Compare by position in the active list (not by levelOrder - 1) so gaps
+    // from deleted puzzles don't lock everything after the gap.
+    const completedPuzzleIds = new Set(
       progressRecords
         .filter((p) => p.isCompleted)
-        .map((p) => {
-          const puzzle = puzzles.find(
-            (pz) => pz._id.toString() === p.puzzleId.toString(),
-          );
-          return puzzle?.levelOrder;
-        })
-        .filter(Boolean),
+        .map((p) => p.puzzleId.toString()),
     );
 
     // Fetch PuzzleGroup data for grouped puzzles
@@ -60,12 +56,13 @@ router.get("/", async (req: AuthRequest, res: Response): Promise<void> => {
     const groupMap = new Map(groups.map((g) => [g._id.toString(), g]));
 
     // Build response with unlock status
-    const puzzlesWithStatus = puzzles.map((puzzle) => {
+    const puzzlesWithStatus = puzzles.map((puzzle, index) => {
       const progress = progressMap.get(puzzle._id.toString());
 
-      // Level 1 is always unlocked, others need previous level completed
+      const previousPuzzle = index > 0 ? puzzles[index - 1] : null;
       const isUnlocked =
-        puzzle.levelOrder === 1 || completedLevels.has(puzzle.levelOrder - 1);
+        !previousPuzzle ||
+        completedPuzzleIds.has(previousPuzzle._id.toString());
 
       const group = puzzle.puzzleGroupId
         ? groupMap.get(puzzle.puzzleGroupId.toString())
@@ -123,27 +120,29 @@ router.get("/:id", async (req: AuthRequest, res: Response): Promise<void> => {
       return;
     }
 
-    // Check if user can access this puzzle (level unlocked)
-    if (puzzle.levelOrder > 1) {
-      const previousPuzzle = await Puzzle.findOne({
-        levelOrder: puzzle.levelOrder - 1,
-        isActive: true,
+    // Check if user can access this puzzle (level unlocked).
+    // Use the nearest preceding active puzzle so deletions don't leave gaps
+    // that permanently lock subsequent levels.
+    const previousPuzzle = await Puzzle.findOne({
+      levelOrder: { $lt: puzzle.levelOrder },
+      isActive: true,
+    })
+      .sort({ levelOrder: -1 })
+      .lean();
+
+    if (previousPuzzle) {
+      const previousProgress = await UserProgress.findOne({
+        userId,
+        puzzleId: previousPuzzle._id,
+        isCompleted: true,
       }).lean();
 
-      if (previousPuzzle) {
-        const previousProgress = await UserProgress.findOne({
-          userId,
-          puzzleId: previousPuzzle._id,
-          isCompleted: true,
-        }).lean();
-
-        if (!previousProgress) {
-          res.status(403).json({
-            error: "Level locked",
-            message: "Complete the previous level to unlock this one",
-          });
-          return;
-        }
+      if (!previousProgress) {
+        res.status(403).json({
+          error: "Level locked",
+          message: "Complete the previous level to unlock this one",
+        });
+        return;
       }
     }
 
