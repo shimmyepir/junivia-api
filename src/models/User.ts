@@ -4,6 +4,8 @@ import bcrypt from "bcryptjs";
 export interface IUser extends Document {
   _id: mongoose.Types.ObjectId;
   email: string;
+  firstName?: string;
+  lastName?: string;
   passwordHash: string;
   role: "user" | "admin";
   isActive: boolean;
@@ -23,6 +25,16 @@ const userSchema = new Schema<IUser>(
       lowercase: true,
       trim: true,
       match: [/^\S+@\S+\.\S+$/, "Please provide a valid email"],
+    },
+    firstName: {
+      type: String,
+      trim: true,
+      maxlength: [60, "First name is too long"],
+    },
+    lastName: {
+      type: String,
+      trim: true,
+      maxlength: [60, "Last name is too long"],
     },
     passwordHash: {
       type: String,

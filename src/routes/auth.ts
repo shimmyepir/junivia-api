@@ -14,6 +14,13 @@ const router = Router();
 const registerSchema = z.object({
   email: z.string().email("Invalid email format"),
   password: z.string().min(6, "Password must be at least 6 characters"),
+  firstName: z
+    .string()
+    .trim()
+    .min(1, "First name is required")
+    .max(60)
+    .optional(),
+  lastName: z.string().trim().min(1).max(60).optional(),
 });
 
 const loginSchema = z.object({
@@ -37,7 +44,7 @@ router.post("/register", async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    const { email, password } = validation.data;
+    const { email, password, firstName, lastName } = validation.data;
 
     // Check if user already exists
     const existingUser = await User.findOne({ email });
@@ -49,6 +56,8 @@ router.post("/register", async (req: Request, res: Response): Promise<void> => {
     // Create new user
     const user = new User({
       email,
+      firstName,
+      lastName,
       passwordHash: password, // Will be hashed by pre-save hook
       role: "user",
     });
@@ -62,6 +71,8 @@ router.post("/register", async (req: Request, res: Response): Promise<void> => {
       user: {
         id: user._id,
         email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
         role: user.role,
         subscriptionTier: user.subscriptionTier || "free",
       },
@@ -118,6 +129,8 @@ router.post("/login", async (req: Request, res: Response): Promise<void> => {
       user: {
         id: user._id,
         email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
         role: user.role,
         subscriptionTier: user.subscriptionTier || "free",
       },
@@ -147,6 +160,8 @@ router.get(
         user: {
           id: req.user._id,
           email: req.user.email,
+          firstName: req.user.firstName,
+          lastName: req.user.lastName,
           role: req.user.role,
           isActive: req.user.isActive,
           subscriptionTier: req.user.subscriptionTier || "free",
