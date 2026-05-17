@@ -18,7 +18,7 @@ const router = Router();
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 200 * 1024 * 1024, // 200MB limit (audiobooks can be large)
+    fileSize: 500 * 1024 * 1024, // 500MB limit (audiobooks can be large)
   },
   fileFilter: (_req, file, cb) => {
     const imageTypes = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
@@ -139,8 +139,15 @@ router.post(
         return;
       }
 
-      const { title, gridRows, gridCols, levelOrder, isActive, spotifyPlaylistUrl, splitCount } =
-        validation.data;
+      const {
+        title,
+        gridRows,
+        gridCols,
+        levelOrder,
+        isActive,
+        spotifyPlaylistUrl,
+        splitCount,
+      } = validation.data;
 
       // Parse section position arrays (sent as JSON strings from FormData)
       const sectionRows: number[] = req.body.sectionRows
