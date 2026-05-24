@@ -59,7 +59,6 @@ const createPuzzleSchema = z.object({
   title: z.string().min(1, "Title is required").max(100),
   gridRows: z.coerce.number().min(2).max(20),
   gridCols: z.coerce.number().min(2).max(20),
-  levelOrder: z.coerce.number().min(1),
   isActive: z.coerce.boolean().optional().default(true),
   spotifyPlaylistUrl: z.string().url().optional().or(z.literal("")),
   splitCount: z.coerce.number().min(1).max(5).optional().default(1),
@@ -69,7 +68,6 @@ const updatePuzzleSchema = z.object({
   title: z.string().min(1).max(100).optional(),
   gridRows: z.coerce.number().min(2).max(20).optional(),
   gridCols: z.coerce.number().min(2).max(20).optional(),
-  levelOrder: z.coerce.number().min(1).optional(),
   isActive: z.coerce.boolean().optional(),
   spotifyPlaylistUrl: z.string().url().optional().or(z.literal("")),
 });
@@ -143,7 +141,6 @@ router.post(
         title,
         gridRows,
         gridCols,
-        levelOrder,
         isActive,
         spotifyPlaylistUrl,
         splitCount,
@@ -237,12 +234,12 @@ router.post(
       } else {
         // --- Single puzzle creation (existing behavior) ---
 
-        // Check if levelOrder is unique
-        const existingLevel = await Puzzle.findOne({ levelOrder });
-        if (existingLevel) {
-          res.status(409).json({ error: `Level ${levelOrder} already exists` });
-          return;
-        }
+        // Auto-assign next levelOrder (max + 1)
+        const maxLevel = await Puzzle.findOne()
+          .sort({ levelOrder: -1 })
+          .select("levelOrder")
+          .lean();
+        const levelOrder = (maxLevel?.levelOrder ?? 0) + 1;
 
         // Upload image to S3
         const { url, key } = await uploadImage(imageFile);
@@ -313,20 +310,6 @@ router.put(
       const imageFile = files?.image?.[0];
       const audiobookFile = files?.audiobook?.[0];
 
-      // Check if levelOrder is being changed and is unique
-      if (updates.levelOrder && updates.levelOrder !== puzzle.levelOrder) {
-        const existingLevel = await Puzzle.findOne({
-          levelOrder: updates.levelOrder,
-          _id: { $ne: puzzle._id },
-        });
-        if (existingLevel) {
-          res
-            .status(409)
-            .json({ error: `Level ${updates.levelOrder} already exists` });
-          return;
-        }
-      }
-
       // If new image provided, upload and delete old one
       if (imageFile) {
         const { url, key } = await uploadImage(imageFile);
@@ -349,8 +332,6 @@ router.put(
       if (updates.title !== undefined) puzzle.title = updates.title;
       if (updates.gridRows !== undefined) puzzle.gridRows = updates.gridRows;
       if (updates.gridCols !== undefined) puzzle.gridCols = updates.gridCols;
-      if (updates.levelOrder !== undefined)
-        puzzle.levelOrder = updates.levelOrder;
       if (updates.isActive !== undefined) puzzle.isActive = updates.isActive;
       if (updates.spotifyPlaylistUrl !== undefined)
         puzzle.spotifyPlaylistUrl = updates.spotifyPlaylistUrl || undefined;
