@@ -18,6 +18,10 @@ router.get("/", async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const userId = req.userId;
 
+    // Pro users have every level unlocked.
+    const user = await User.findById(userId).lean();
+    const isPro = user?.subscriptionTier === "pro";
+
     // Fetch all active puzzles
     const puzzles = await Puzzle.find({ isActive: true })
       .sort({ levelOrder: 1 })
@@ -61,6 +65,7 @@ router.get("/", async (req: AuthRequest, res: Response): Promise<void> => {
 
       const previousPuzzle = index > 0 ? puzzles[index - 1] : null;
       const isUnlocked =
+        isPro ||
         !previousPuzzle ||
         completedPuzzleIds.has(previousPuzzle._id.toString());
 
@@ -120,29 +125,36 @@ router.get("/:id", async (req: AuthRequest, res: Response): Promise<void> => {
       return;
     }
 
+    // Pro users bypass level gating and the daily limit.
+    const user = await User.findById(userId).lean();
+    const subscriptionTier = user?.subscriptionTier || "free";
+    const isPro = subscriptionTier === "pro";
+
     // Check if user can access this puzzle (level unlocked).
     // Use the nearest preceding active puzzle so deletions don't leave gaps
     // that permanently lock subsequent levels.
-    const previousPuzzle = await Puzzle.findOne({
-      levelOrder: { $lt: puzzle.levelOrder },
-      isActive: true,
-    })
-      .sort({ levelOrder: -1 })
-      .lean();
+    if (!isPro) {
+      const previousPuzzle = await Puzzle.findOne({
+        levelOrder: { $lt: puzzle.levelOrder },
+        isActive: true,
+      })
+        .sort({ levelOrder: -1 })
+        .lean();
 
-    if (previousPuzzle) {
-      const previousProgress = await UserProgress.findOne({
-        userId,
-        puzzleId: previousPuzzle._id,
-        isCompleted: true,
-      }).lean();
+      if (previousPuzzle) {
+        const previousProgress = await UserProgress.findOne({
+          userId,
+          puzzleId: previousPuzzle._id,
+          isCompleted: true,
+        }).lean();
 
-      if (!previousProgress) {
-        res.status(403).json({
-          error: "Level locked",
-          message: "Complete the previous level to unlock this one",
-        });
-        return;
+        if (!previousProgress) {
+          res.status(403).json({
+            error: "Level locked",
+            message: "Complete the previous level to unlock this one",
+          });
+          return;
+        }
       }
     }
 
@@ -151,10 +163,6 @@ router.get("/:id", async (req: AuthRequest, res: Response): Promise<void> => {
       userId,
       puzzleId: puzzle._id,
     }).lean();
-
-    // Daily limit check for free users
-    const user = await User.findById(userId).lean();
-    const subscriptionTier = user?.subscriptionTier || "free";
 
     if (subscriptionTier === "free") {
       // Check if user already has progress on this puzzle (allow continuing)
