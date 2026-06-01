@@ -1,4 +1,5 @@
 import mongoose, { Document, Schema } from 'mongoose';
+import type { PuzzleCategory } from './Puzzle.js';
 
 export interface IPuzzleGroup extends Document {
   _id: mongoose.Types.ObjectId;
@@ -9,9 +10,11 @@ export interface IPuzzleGroup extends Document {
   gridRows: number;
   gridCols: number;
   isActive: boolean;
+  category: PuzzleCategory;
   spotifyPlaylistUrl?: string;
   audiobookUrl?: string;
   audiobookKey?: string;
+  audioTitle?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -54,6 +57,12 @@ const puzzleGroupSchema = new Schema<IPuzzleGroup>(
       type: Boolean,
       default: true,
     },
+    category: {
+      type: String,
+      enum: ["audiobook", "music"],
+      default: "audiobook",
+      required: true,
+    },
     spotifyPlaylistUrl: {
       type: String,
       trim: true,
@@ -63,6 +72,11 @@ const puzzleGroupSchema = new Schema<IPuzzleGroup>(
     },
     audiobookKey: {
       type: String,
+    },
+    audioTitle: {
+      type: String,
+      trim: true,
+      maxlength: [120, "Audio title cannot exceed 120 characters"],
     },
   },
   {

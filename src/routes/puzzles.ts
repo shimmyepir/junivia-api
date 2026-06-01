@@ -80,8 +80,11 @@ router.get("/", async (req: AuthRequest, res: Response): Promise<void> => {
         gridRows: puzzle.gridRows,
         gridCols: puzzle.gridCols,
         levelOrder: puzzle.levelOrder,
-        spotifyPlaylistUrl: puzzle.spotifyPlaylistUrl || null,
-        audiobookUrl: puzzle.audiobookUrl || null,
+        category: puzzle.category || group?.category || "audiobook",
+        spotifyPlaylistUrl:
+          puzzle.spotifyPlaylistUrl || group?.spotifyPlaylistUrl || null,
+        audiobookUrl: puzzle.audiobookUrl || group?.audiobookUrl || null,
+        audioTitle: puzzle.audioTitle || group?.audioTitle || null,
         isUnlocked,
         isCompleted: progress?.isCompleted ?? false,
         progress: progress
@@ -95,6 +98,7 @@ router.get("/", async (req: AuthRequest, res: Response): Promise<void> => {
         sectionCol: puzzle.sectionCol ?? null,
         sectionTotal: puzzle.sectionTotal ?? null,
         originalImageUrl: group?.originalImageUrl || null,
+        groupTitle: group?.title || null,
       };
     });
 
@@ -192,10 +196,20 @@ router.get("/:id", async (req: AuthRequest, res: Response): Promise<void> => {
 
     // Fetch group data if this is a grouped puzzle
     let originalImageUrl: string | null = null;
+    let groupTitle: string | null = null;
+    let groupCategory: string | null = null;
+    let groupAudiobookUrl: string | null = null;
+    let groupSpotifyUrl: string | null = null;
+    let groupAudioTitle: string | null = null;
     if (puzzle.puzzleGroupId) {
       const group = await PuzzleGroup.findById(puzzle.puzzleGroupId).lean();
       if (group) {
         originalImageUrl = group.originalImageUrl;
+        groupTitle = group.title;
+        groupCategory = group.category;
+        groupAudiobookUrl = group.audiobookUrl || null;
+        groupSpotifyUrl = group.spotifyPlaylistUrl || null;
+        groupAudioTitle = group.audioTitle || null;
       }
     }
 
@@ -207,13 +221,17 @@ router.get("/:id", async (req: AuthRequest, res: Response): Promise<void> => {
         gridRows: puzzle.gridRows,
         gridCols: puzzle.gridCols,
         levelOrder: puzzle.levelOrder,
-        spotifyPlaylistUrl: puzzle.spotifyPlaylistUrl || null,
-        audiobookUrl: puzzle.audiobookUrl || null,
+        category: puzzle.category || groupCategory || "audiobook",
+        spotifyPlaylistUrl:
+          puzzle.spotifyPlaylistUrl || groupSpotifyUrl || null,
+        audiobookUrl: puzzle.audiobookUrl || groupAudiobookUrl || null,
+        audioTitle: puzzle.audioTitle || groupAudioTitle || null,
         puzzleGroupId: puzzle.puzzleGroupId || null,
         sectionRow: puzzle.sectionRow ?? null,
         sectionCol: puzzle.sectionCol ?? null,
         sectionTotal: puzzle.sectionTotal ?? null,
         originalImageUrl,
+        groupTitle,
       },
       progress: progress
         ? {

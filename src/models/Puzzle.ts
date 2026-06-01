@@ -1,5 +1,7 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
+export type PuzzleCategory = "audiobook" | "music";
+
 export interface IPuzzle extends Document {
   _id: mongoose.Types.ObjectId;
   title: string;
@@ -9,9 +11,11 @@ export interface IPuzzle extends Document {
   gridCols: number;
   levelOrder: number;
   isActive: boolean;
+  category: PuzzleCategory;
   spotifyPlaylistUrl?: string;
   audiobookUrl?: string;
   audiobookKey?: string; // S3 object key for deletion
+  audioTitle?: string;
   puzzleGroupId?: mongoose.Types.ObjectId;
   sectionRow?: number;
   sectionCol?: number;
@@ -58,6 +62,12 @@ const puzzleSchema = new Schema<IPuzzle>(
       type: Boolean,
       default: true,
     },
+    category: {
+      type: String,
+      enum: ["audiobook", "music"],
+      default: "audiobook",
+      required: true,
+    },
     spotifyPlaylistUrl: {
       type: String,
       trim: true,
@@ -67,6 +77,11 @@ const puzzleSchema = new Schema<IPuzzle>(
     },
     audiobookKey: {
       type: String,
+    },
+    audioTitle: {
+      type: String,
+      trim: true,
+      maxlength: [120, "Audio title cannot exceed 120 characters"],
     },
     puzzleGroupId: {
       type: Schema.Types.ObjectId,

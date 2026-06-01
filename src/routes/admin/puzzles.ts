@@ -60,6 +60,8 @@ const createPuzzleSchema = z.object({
   gridRows: z.coerce.number().min(2).max(20),
   gridCols: z.coerce.number().min(2).max(20),
   isActive: z.coerce.boolean().optional().default(true),
+  category: z.enum(["audiobook", "music"]).optional().default("audiobook"),
+  audioTitle: z.string().max(120).optional().or(z.literal("")),
   spotifyPlaylistUrl: z.string().url().optional().or(z.literal("")),
   splitCount: z.coerce.number().min(1).max(5).optional().default(1),
 });
@@ -69,6 +71,8 @@ const updatePuzzleSchema = z.object({
   gridRows: z.coerce.number().min(2).max(20).optional(),
   gridCols: z.coerce.number().min(2).max(20).optional(),
   isActive: z.coerce.boolean().optional(),
+  category: z.enum(["audiobook", "music"]).optional(),
+  audioTitle: z.string().max(120).optional().or(z.literal("")),
   spotifyPlaylistUrl: z.string().url().optional().or(z.literal("")),
 });
 
@@ -80,7 +84,34 @@ router.get("/", async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
     const puzzles = await Puzzle.find().sort({ levelOrder: 1 }).lean();
 
-    res.json({ puzzles });
+    // Series puzzles share audio + spotify with their parent group. Merge
+    // those fields into each section so the admin grouped view can show
+    // accurate "has audio" / "has spotify" badges without an extra fetch.
+    const groupIds = [
+      ...new Set(
+        puzzles
+          .filter((p) => p.puzzleGroupId)
+          .map((p) => p.puzzleGroupId!.toString()),
+      ),
+    ];
+    const groups = groupIds.length
+      ? await PuzzleGroup.find({ _id: { $in: groupIds } }).lean()
+      : [];
+    const groupMap = new Map(groups.map((g) => [g._id.toString(), g]));
+
+    const merged = puzzles.map((p) => {
+      if (!p.puzzleGroupId) return p;
+      const g = groupMap.get(p.puzzleGroupId.toString());
+      if (!g) return p;
+      return {
+        ...p,
+        audiobookUrl: p.audiobookUrl || g.audiobookUrl,
+        audioTitle: p.audioTitle || g.audioTitle,
+        spotifyPlaylistUrl: p.spotifyPlaylistUrl || g.spotifyPlaylistUrl,
+      };
+    });
+
+    res.json({ puzzles: merged });
   } catch (error) {
     console.error("List puzzles error:", error);
     res.status(500).json({ error: "Failed to fetch puzzles" });
@@ -100,7 +131,24 @@ router.get("/:id", async (req: AuthRequest, res: Response): Promise<void> => {
       return;
     }
 
-    res.json({ puzzle });
+    // Series puzzles share audio + spotify with their group. Merge the
+    // group's values into the response so the admin edit form prefills
+    // correctly regardless of which section is being edited.
+    let merged: typeof puzzle = puzzle;
+    if (puzzle.puzzleGroupId) {
+      const group = await PuzzleGroup.findById(puzzle.puzzleGroupId).lean();
+      if (group) {
+        merged = {
+          ...puzzle,
+          audiobookUrl: puzzle.audiobookUrl || group.audiobookUrl,
+          audioTitle: puzzle.audioTitle || group.audioTitle,
+          spotifyPlaylistUrl:
+            puzzle.spotifyPlaylistUrl || group.spotifyPlaylistUrl,
+        };
+      }
+    }
+
+    res.json({ puzzle: merged });
   } catch (error) {
     console.error("Get puzzle error:", error);
     res.status(500).json({ error: "Failed to fetch puzzle" });
@@ -142,6 +190,8 @@ router.post(
         gridRows,
         gridCols,
         isActive,
+        category,
+        audioTitle,
         spotifyPlaylistUrl,
         splitCount,
       } = validation.data;
@@ -183,7 +233,8 @@ router.post(
           audiobookData = await uploadAudio(audiobookFile);
         }
 
-        // Create PuzzleGroup
+        // Create PuzzleGroup — audio + spotify live on the group so every
+        // section in the series shares them.
         const group = new PuzzleGroup({
           title,
           originalImageUrl: originalUpload.url,
@@ -192,9 +243,11 @@ router.post(
           gridRows,
           gridCols,
           isActive,
+          category,
           spotifyPlaylistUrl: spotifyPlaylistUrl || undefined,
           audiobookUrl: audiobookData?.url,
           audiobookKey: audiobookData?.key,
+          audioTitle: audioTitle || undefined,
         });
         await group.save();
 
@@ -214,9 +267,9 @@ router.post(
             gridCols,
             levelOrder: startingLevel + i,
             isActive,
-            spotifyPlaylistUrl: spotifyPlaylistUrl || undefined,
-            audiobookUrl: audiobookData?.url,
-            audiobookKey: audiobookData?.key,
+            category,
+            // Series-level audio + spotify are read from the group at fetch
+            // time. Leaving them off the section keeps the data normalized.
             puzzleGroupId: group._id,
             sectionRow: row,
             sectionCol: col,
@@ -253,7 +306,9 @@ router.post(
           gridCols,
           levelOrder,
           isActive,
+          category,
           spotifyPlaylistUrl: spotifyPlaylistUrl || undefined,
+          audioTitle: audioTitle || undefined,
         });
 
         // Upload audiobook if provided
@@ -318,23 +373,35 @@ router.put(
         puzzle.imageKey = key;
       }
 
-      // If new audiobook provided, upload and delete old one
+      // Audio + audioTitle + spotify for series puzzles live on the group,
+      // so updates from an admin editing one section apply to the whole series.
+      const group = puzzle.puzzleGroupId
+        ? await PuzzleGroup.findById(puzzle.puzzleGroupId)
+        : null;
+      const audioOwner = group ?? puzzle;
+
       if (audiobookFile) {
-        if (puzzle.audiobookKey) {
-          await deleteImage(puzzle.audiobookKey);
+        if (audioOwner.audiobookKey) {
+          await deleteImage(audioOwner.audiobookKey);
         }
         const audioResult = await uploadAudio(audiobookFile);
-        puzzle.audiobookUrl = audioResult.url;
-        puzzle.audiobookKey = audioResult.key;
+        audioOwner.audiobookUrl = audioResult.url;
+        audioOwner.audiobookKey = audioResult.key;
       }
+      if (updates.audioTitle !== undefined) {
+        audioOwner.audioTitle = updates.audioTitle || undefined;
+      }
+      if (updates.spotifyPlaylistUrl !== undefined) {
+        audioOwner.spotifyPlaylistUrl = updates.spotifyPlaylistUrl || undefined;
+      }
+      if (group) await group.save();
 
       // Apply other updates
       if (updates.title !== undefined) puzzle.title = updates.title;
       if (updates.gridRows !== undefined) puzzle.gridRows = updates.gridRows;
       if (updates.gridCols !== undefined) puzzle.gridCols = updates.gridCols;
       if (updates.isActive !== undefined) puzzle.isActive = updates.isActive;
-      if (updates.spotifyPlaylistUrl !== undefined)
-        puzzle.spotifyPlaylistUrl = updates.spotifyPlaylistUrl || undefined;
+      if (updates.category !== undefined) puzzle.category = updates.category;
 
       await puzzle.save();
 
@@ -452,6 +519,129 @@ router.post(
     } catch (error) {
       console.error("Reorder puzzles error:", error);
       res.status(500).json({ error: "Failed to reorder puzzles" });
+    }
+  },
+);
+
+// ─── Group / Series endpoints ───────────────────────────────
+
+const updateGroupSchema = z.object({
+  title: z.string().min(1).max(100).optional(),
+  isActive: z.coerce.boolean().optional(),
+  category: z.enum(["audiobook", "music"]).optional(),
+  audioTitle: z.string().max(120).optional().or(z.literal("")),
+  spotifyPlaylistUrl: z.string().url().optional().or(z.literal("")),
+});
+
+/**
+ * GET /admin/puzzles/groups/:groupId
+ * Fetch a puzzle group with its sections
+ */
+router.get(
+  "/groups/:groupId",
+  async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+      const group = await PuzzleGroup.findById(req.params.groupId).lean();
+      if (!group) {
+        res.status(404).json({ error: "Series not found" });
+        return;
+      }
+      const sections = await Puzzle.find({ puzzleGroupId: group._id })
+        .sort({ levelOrder: 1 })
+        .lean();
+      res.json({ group, sections });
+    } catch (error) {
+      console.error("Get group error:", error);
+      res.status(500).json({ error: "Failed to fetch series" });
+    }
+  },
+);
+
+/**
+ * PUT /admin/puzzles/groups/:groupId
+ * Update group-level fields. Title / category / isActive cascade to every
+ * section so the series stays consistent.
+ */
+router.put(
+  "/groups/:groupId",
+  upload.fields([{ name: "audiobook", maxCount: 1 }]),
+  async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+      const group = await PuzzleGroup.findById(req.params.groupId);
+      if (!group) {
+        res.status(404).json({ error: "Series not found" });
+        return;
+      }
+
+      const validation = updateGroupSchema.safeParse(req.body);
+      if (!validation.success) {
+        res.status(400).json({
+          error: "Validation failed",
+          details: validation.error.flatten().fieldErrors,
+        });
+        return;
+      }
+
+      const updates = validation.data;
+      const files = req.files as {
+        [fieldname: string]: Express.Multer.File[];
+      };
+      const audiobookFile = files?.audiobook?.[0];
+
+      if (audiobookFile) {
+        if (group.audiobookKey) {
+          await deleteImage(group.audiobookKey);
+        }
+        const audioResult = await uploadAudio(audiobookFile);
+        group.audiobookUrl = audioResult.url;
+        group.audiobookKey = audioResult.key;
+      }
+
+      if (updates.audioTitle !== undefined) {
+        group.audioTitle = updates.audioTitle || undefined;
+      }
+      if (updates.spotifyPlaylistUrl !== undefined) {
+        group.spotifyPlaylistUrl = updates.spotifyPlaylistUrl || undefined;
+      }
+      if (updates.title !== undefined) group.title = updates.title;
+      if (updates.category !== undefined) group.category = updates.category;
+      if (updates.isActive !== undefined) group.isActive = updates.isActive;
+
+      await group.save();
+
+      // Cascade title / category / isActive to every section so the user-
+      // facing list reflects the group state without an extra join.
+      const sectionUpdates: Record<string, unknown> = {};
+      if (updates.category !== undefined)
+        sectionUpdates.category = updates.category;
+      if (updates.isActive !== undefined)
+        sectionUpdates.isActive = updates.isActive;
+
+      if (Object.keys(sectionUpdates).length > 0) {
+        await Puzzle.updateMany(
+          { puzzleGroupId: group._id },
+          { $set: sectionUpdates },
+        );
+      }
+
+      // Section titles are kept as "Group Title (N/total)" so renaming the
+      // group rewrites every section title too.
+      if (updates.title !== undefined) {
+        const sections = await Puzzle.find({ puzzleGroupId: group._id });
+        await Promise.all(
+          sections.map((s) => {
+            const match = s.title.match(/\((\d+)\/(\d+)\)\s*$/);
+            const suffix = match ? ` ${match[0]}` : "";
+            s.title = `${group.title}${suffix}`;
+            return s.save();
+          }),
+        );
+      }
+
+      res.json({ message: "Series updated successfully", group });
+    } catch (error) {
+      console.error("Update group error:", error);
+      res.status(500).json({ error: "Failed to update series" });
     }
   },
 );
