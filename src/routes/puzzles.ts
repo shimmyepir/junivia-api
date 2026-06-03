@@ -91,6 +91,12 @@ router.get("/", async (req: AuthRequest, res: Response): Promise<void> => {
           ? {
               placedPieceIds: progress.placedPieceIds,
               completedAt: progress.completedAt,
+              // Older records may not have lastPlayedAt set; fall back to
+              // the auto-managed updatedAt so resume sorting still works.
+              lastPlayedAt:
+                progress.lastPlayedAt ?? progress.updatedAt ?? null,
+              timePlayedSeconds: progress.timePlayedSeconds ?? 0,
+              moves: progress.moves ?? 0,
             }
           : null,
         puzzleGroupId: puzzle.puzzleGroupId || null,
@@ -167,6 +173,15 @@ router.get("/:id", async (req: AuthRequest, res: Response): Promise<void> => {
       userId,
       puzzleId: puzzle._id,
     }).lean();
+
+    // Touch lastPlayedAt so opening a puzzle (even without placing a piece)
+    // counts as "where I left off". Upsert to create a stub record if the
+    // user is opening this puzzle for the first time.
+    UserProgress.updateOne(
+      { userId, puzzleId: puzzle._id },
+      { $set: { lastPlayedAt: new Date() } },
+      { upsert: true, setDefaultsOnInsert: true },
+    ).catch((err) => console.error("Failed to touch lastPlayedAt:", err));
 
     if (subscriptionTier === "free") {
       // Check if user already has progress on this puzzle (allow continuing)

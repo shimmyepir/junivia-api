@@ -7,6 +7,11 @@ export interface IUserProgress extends Document {
   placedPieceIds: string[]; // Array of piece IDs that have been correctly placed
   isCompleted: boolean;
   completedAt: Date | null;
+  // Lifetime counters that accumulate across every play session for this
+  // user-puzzle pair.
+  timePlayedSeconds: number;
+  moves: number;
+  lastPlayedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -32,6 +37,20 @@ const userProgressSchema = new Schema<IUserProgress>(
       default: false,
     },
     completedAt: {
+      type: Date,
+      default: null,
+    },
+    timePlayedSeconds: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    moves: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    lastPlayedAt: {
       type: Date,
       default: null,
     },

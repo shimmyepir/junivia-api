@@ -12,6 +12,10 @@ router.use(authenticate);
 // Validation schema for progress update
 const updateProgressSchema = z.object({
   placedPieceIds: z.array(z.string()),
+  // Optional deltas the client accumulated since its last save. The server
+  // adds them to the lifetime totals on this progress doc.
+  additionalSeconds: z.coerce.number().min(0).max(86_400).optional(),
+  additionalMoves: z.coerce.number().int().min(0).max(10_000).optional(),
 });
 
 /**
@@ -54,7 +58,17 @@ router.get(
         return;
       }
 
-      res.json({ progress });
+      res.json({
+        progress: {
+          placedPieceIds: progress.placedPieceIds,
+          isCompleted: progress.isCompleted,
+          completedAt: progress.completedAt,
+          timePlayedSeconds: progress.timePlayedSeconds ?? 0,
+          moves: progress.moves ?? 0,
+          lastPlayedAt:
+            progress.lastPlayedAt ?? progress.updatedAt ?? null,
+        },
+      });
     } catch (error) {
       console.error("Get progress error:", error);
       res.status(500).json({ error: "Failed to fetch progress" });
@@ -83,7 +97,8 @@ router.put(
         return;
       }
 
-      const { placedPieceIds } = validation.data;
+      const { placedPieceIds, additionalSeconds, additionalMoves } =
+        validation.data;
 
       // Verify the puzzle exists
       const puzzle = await Puzzle.findById(puzzleId).lean();
@@ -98,18 +113,41 @@ router.put(
 
       // Check if puzzle is completed
       const isCompleted = placedPieceIds.length >= totalPieces;
+      const now = new Date();
 
-      // Upsert progress
+      // Find existing progress to know if completedAt should be set vs kept.
+      const existing = await UserProgress.findOne({ userId, puzzleId });
+      const completedAt = isCompleted
+        ? existing?.completedAt ?? now
+        : null;
+
+      const inc: Record<string, number> = {};
+      if (additionalSeconds && additionalSeconds > 0) {
+        inc.timePlayedSeconds = additionalSeconds;
+      }
+      if (additionalMoves && additionalMoves > 0) {
+        inc.moves = additionalMoves;
+      }
+
+      const update: Record<string, unknown> = {
+        $set: {
+          placedPieceIds,
+          isCompleted,
+          completedAt,
+          lastPlayedAt: now,
+        },
+      };
+      if (Object.keys(inc).length > 0) {
+        update.$inc = inc;
+      }
+      // $inc on a missing field initializes it to 0 then increments, so we
+      // don't need $setOnInsert. (Mixing $inc + $setOnInsert on the same
+      // field would error.)
+
       const progress = await UserProgress.findOneAndUpdate(
         { userId, puzzleId },
-        {
-          $set: {
-            placedPieceIds,
-            isCompleted,
-            completedAt: isCompleted ? new Date() : null,
-          },
-        },
-        { upsert: true, new: true },
+        update,
+        { upsert: true, new: true, setDefaultsOnInsert: true },
       );
 
       res.json({
@@ -118,6 +156,9 @@ router.put(
           placedPieceIds: progress.placedPieceIds,
           isCompleted: progress.isCompleted,
           completedAt: progress.completedAt,
+          timePlayedSeconds: progress.timePlayedSeconds,
+          moves: progress.moves,
+          lastPlayedAt: progress.lastPlayedAt,
         },
       });
     } catch (error) {
