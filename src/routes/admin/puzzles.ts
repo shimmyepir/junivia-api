@@ -55,12 +55,15 @@ router.use(authenticate);
 router.use(requireAdmin);
 
 // Validation schemas
+const ASPECT_RATIOS = ["1:1", "16:9", "9:16", "4:3", "3:4"] as const;
+
 const createPuzzleSchema = z.object({
   title: z.string().min(1, "Title is required").max(100),
   gridRows: z.coerce.number().min(2).max(20),
   gridCols: z.coerce.number().min(2).max(20),
   isActive: z.coerce.boolean().optional().default(true),
   category: z.enum(["audiobook", "music"]).optional().default("audiobook"),
+  aspectRatio: z.enum(ASPECT_RATIOS).optional().default("1:1"),
   audioTitle: z.string().max(120).optional().or(z.literal("")),
   spotifyPlaylistUrl: z.string().url().optional().or(z.literal("")),
   splitCount: z.coerce.number().min(1).max(5).optional().default(1),
@@ -72,6 +75,7 @@ const updatePuzzleSchema = z.object({
   gridCols: z.coerce.number().min(2).max(20).optional(),
   isActive: z.coerce.boolean().optional(),
   category: z.enum(["audiobook", "music"]).optional(),
+  aspectRatio: z.enum(ASPECT_RATIOS).optional(),
   audioTitle: z.string().max(120).optional().or(z.literal("")),
   spotifyPlaylistUrl: z.string().url().optional().or(z.literal("")),
 });
@@ -191,6 +195,7 @@ router.post(
         gridCols,
         isActive,
         category,
+        aspectRatio,
         audioTitle,
         spotifyPlaylistUrl,
         splitCount,
@@ -244,6 +249,7 @@ router.post(
           gridCols,
           isActive,
           category,
+          aspectRatio,
           spotifyPlaylistUrl: spotifyPlaylistUrl || undefined,
           audiobookUrl: audiobookData?.url,
           audiobookKey: audiobookData?.key,
@@ -268,6 +274,7 @@ router.post(
             levelOrder: startingLevel + i,
             isActive,
             category,
+            aspectRatio,
             // Series-level audio + spotify are read from the group at fetch
             // time. Leaving them off the section keeps the data normalized.
             puzzleGroupId: group._id,
@@ -307,6 +314,7 @@ router.post(
           levelOrder,
           isActive,
           category,
+          aspectRatio,
           spotifyPlaylistUrl: spotifyPlaylistUrl || undefined,
           audioTitle: audioTitle || undefined,
         });
@@ -402,6 +410,8 @@ router.put(
       if (updates.gridCols !== undefined) puzzle.gridCols = updates.gridCols;
       if (updates.isActive !== undefined) puzzle.isActive = updates.isActive;
       if (updates.category !== undefined) puzzle.category = updates.category;
+      if (updates.aspectRatio !== undefined)
+        puzzle.aspectRatio = updates.aspectRatio;
 
       await puzzle.save();
 
@@ -529,6 +539,7 @@ const updateGroupSchema = z.object({
   title: z.string().min(1).max(100).optional(),
   isActive: z.coerce.boolean().optional(),
   category: z.enum(["audiobook", "music"]).optional(),
+  aspectRatio: z.enum(ASPECT_RATIOS).optional(),
   audioTitle: z.string().max(120).optional().or(z.literal("")),
   spotifyPlaylistUrl: z.string().url().optional().or(z.literal("")),
 });
@@ -606,16 +617,20 @@ router.put(
       if (updates.title !== undefined) group.title = updates.title;
       if (updates.category !== undefined) group.category = updates.category;
       if (updates.isActive !== undefined) group.isActive = updates.isActive;
+      if (updates.aspectRatio !== undefined)
+        group.aspectRatio = updates.aspectRatio;
 
       await group.save();
 
-      // Cascade title / category / isActive to every section so the user-
-      // facing list reflects the group state without an extra join.
+      // Cascade title / category / isActive / aspectRatio to every section so
+      // the user-facing list reflects the group state without an extra join.
       const sectionUpdates: Record<string, unknown> = {};
       if (updates.category !== undefined)
         sectionUpdates.category = updates.category;
       if (updates.isActive !== undefined)
         sectionUpdates.isActive = updates.isActive;
+      if (updates.aspectRatio !== undefined)
+        sectionUpdates.aspectRatio = updates.aspectRatio;
 
       if (Object.keys(sectionUpdates).length > 0) {
         await Puzzle.updateMany(

@@ -1,6 +1,15 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
 export type PuzzleCategory = "audiobook" | "music";
+export type PuzzleAspectRatio = "1:1" | "16:9" | "9:16" | "4:3" | "3:4";
+
+export const PUZZLE_ASPECT_RATIOS: PuzzleAspectRatio[] = [
+  "1:1",
+  "16:9",
+  "9:16",
+  "4:3",
+  "3:4",
+];
 
 export interface IPuzzle extends Document {
   _id: mongoose.Types.ObjectId;
@@ -12,6 +21,7 @@ export interface IPuzzle extends Document {
   levelOrder: number;
   isActive: boolean;
   category: PuzzleCategory;
+  aspectRatio: PuzzleAspectRatio;
   spotifyPlaylistUrl?: string;
   audiobookUrl?: string;
   audiobookKey?: string; // S3 object key for deletion
@@ -66,6 +76,12 @@ const puzzleSchema = new Schema<IPuzzle>(
       type: String,
       enum: ["audiobook", "music"],
       default: "audiobook",
+      required: true,
+    },
+    aspectRatio: {
+      type: String,
+      enum: PUZZLE_ASPECT_RATIOS,
+      default: "1:1",
       required: true,
     },
     spotifyPlaylistUrl: {

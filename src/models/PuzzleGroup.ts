@@ -1,5 +1,9 @@
 import mongoose, { Document, Schema } from 'mongoose';
-import type { PuzzleCategory } from './Puzzle.js';
+import {
+  PUZZLE_ASPECT_RATIOS,
+  type PuzzleAspectRatio,
+  type PuzzleCategory,
+} from './Puzzle.js';
 
 export interface IPuzzleGroup extends Document {
   _id: mongoose.Types.ObjectId;
@@ -11,6 +15,7 @@ export interface IPuzzleGroup extends Document {
   gridCols: number;
   isActive: boolean;
   category: PuzzleCategory;
+  aspectRatio: PuzzleAspectRatio;
   spotifyPlaylistUrl?: string;
   audiobookUrl?: string;
   audiobookKey?: string;
@@ -61,6 +66,12 @@ const puzzleGroupSchema = new Schema<IPuzzleGroup>(
       type: String,
       enum: ["audiobook", "music"],
       default: "audiobook",
+      required: true,
+    },
+    aspectRatio: {
+      type: String,
+      enum: PUZZLE_ASPECT_RATIOS,
+      default: "1:1",
       required: true,
     },
     spotifyPlaylistUrl: {

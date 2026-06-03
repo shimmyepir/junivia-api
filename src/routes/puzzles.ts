@@ -81,6 +81,8 @@ router.get("/", async (req: AuthRequest, res: Response): Promise<void> => {
         gridCols: puzzle.gridCols,
         levelOrder: puzzle.levelOrder,
         category: puzzle.category || group?.category || "audiobook",
+        aspectRatio:
+          puzzle.aspectRatio || group?.aspectRatio || "1:1",
         spotifyPlaylistUrl:
           puzzle.spotifyPlaylistUrl || group?.spotifyPlaylistUrl || null,
         audiobookUrl: puzzle.audiobookUrl || group?.audiobookUrl || null,
@@ -216,6 +218,7 @@ router.get("/:id", async (req: AuthRequest, res: Response): Promise<void> => {
     let groupAudiobookUrl: string | null = null;
     let groupSpotifyUrl: string | null = null;
     let groupAudioTitle: string | null = null;
+    let groupAspectRatio: string | null = null;
     if (puzzle.puzzleGroupId) {
       const group = await PuzzleGroup.findById(puzzle.puzzleGroupId).lean();
       if (group) {
@@ -225,6 +228,7 @@ router.get("/:id", async (req: AuthRequest, res: Response): Promise<void> => {
         groupAudiobookUrl = group.audiobookUrl || null;
         groupSpotifyUrl = group.spotifyPlaylistUrl || null;
         groupAudioTitle = group.audioTitle || null;
+        groupAspectRatio = group.aspectRatio || null;
       }
     }
 
@@ -237,6 +241,7 @@ router.get("/:id", async (req: AuthRequest, res: Response): Promise<void> => {
         gridCols: puzzle.gridCols,
         levelOrder: puzzle.levelOrder,
         category: puzzle.category || groupCategory || "audiobook",
+        aspectRatio: puzzle.aspectRatio || groupAspectRatio || "1:1",
         spotifyPlaylistUrl:
           puzzle.spotifyPlaylistUrl || groupSpotifyUrl || null,
         audiobookUrl: puzzle.audiobookUrl || groupAudiobookUrl || null,
