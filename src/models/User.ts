@@ -11,6 +11,7 @@ export interface IUser extends Document {
   isActive: boolean;
   subscriptionTier: "free" | "pro";
   revenuecatId?: string;
+  hasCompletedOnboarding: boolean;
   createdAt: Date;
   updatedAt: Date;
   comparePassword(candidatePassword: string): Promise<boolean>;
@@ -57,6 +58,10 @@ const userSchema = new Schema<IUser>(
     },
     revenuecatId: {
       type: String,
+    },
+    hasCompletedOnboarding: {
+      type: Boolean,
+      default: false,
     },
   },
   {

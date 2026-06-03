@@ -75,6 +75,7 @@ router.post("/register", async (req: Request, res: Response): Promise<void> => {
         lastName: user.lastName,
         role: user.role,
         subscriptionTier: user.subscriptionTier || "free",
+        hasCompletedOnboarding: user.hasCompletedOnboarding ?? false,
       },
       token,
     });
@@ -133,6 +134,7 @@ router.post("/login", async (req: Request, res: Response): Promise<void> => {
         lastName: user.lastName,
         role: user.role,
         subscriptionTier: user.subscriptionTier || "free",
+        hasCompletedOnboarding: user.hasCompletedOnboarding ?? false,
       },
       token,
     });
@@ -165,12 +167,36 @@ router.get(
           role: req.user.role,
           isActive: req.user.isActive,
           subscriptionTier: req.user.subscriptionTier || "free",
+          hasCompletedOnboarding: req.user.hasCompletedOnboarding ?? false,
           createdAt: req.user.createdAt,
         },
       });
     } catch (error) {
       console.error("Get user error:", error);
       res.status(500).json({ error: "Failed to get user info" });
+    }
+  },
+);
+
+/**
+ * POST /auth/onboarding/complete
+ * Mark the current user as having finished onboarding.
+ */
+router.post(
+  "/onboarding/complete",
+  authenticate,
+  async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+      if (!req.user) {
+        res.status(401).json({ error: "Not authenticated" });
+        return;
+      }
+      req.user.hasCompletedOnboarding = true;
+      await req.user.save();
+      res.json({ message: "Onboarding marked complete" });
+    } catch (error) {
+      console.error("Complete onboarding error:", error);
+      res.status(500).json({ error: "Failed to mark onboarding complete" });
     }
   },
 );

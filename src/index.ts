@@ -10,6 +10,8 @@ import {
   puzzlesRouter,
   progressRouter,
   adminPuzzlesRouter,
+  adminWelcomePuzzleRouter,
+  welcomePuzzleRouter,
   subscriptionRouter,
   meRouter,
 } from "./routes/index.js";
@@ -32,7 +34,9 @@ app.get("/health", (_req, res) => {
 app.use("/auth", authRouter);
 app.use("/puzzles", puzzlesRouter);
 app.use("/progress", progressRouter);
+app.use("/welcome-puzzle", welcomePuzzleRouter);
 app.use("/admin/puzzles", adminPuzzlesRouter);
+app.use("/admin/welcome-puzzle", adminWelcomePuzzleRouter);
 app.use("/subscription", subscriptionRouter);
 app.use("/me", meRouter);
 
