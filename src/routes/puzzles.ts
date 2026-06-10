@@ -93,6 +93,9 @@ router.get("/", async (req: AuthRequest, res: Response): Promise<void> => {
           ? {
               placedPieceIds: progress.placedPieceIds,
               completedAt: progress.completedAt,
+              level: progress.level ?? null,
+              gridRows: progress.gridRows ?? null,
+              gridCols: progress.gridCols ?? null,
               // Older records may not have lastPlayedAt set; fall back to
               // the auto-managed updatedAt so resume sorting still works.
               lastPlayedAt:
@@ -258,6 +261,9 @@ router.get("/:id", async (req: AuthRequest, res: Response): Promise<void> => {
             placedPieceIds: progress.placedPieceIds,
             isCompleted: progress.isCompleted,
             completedAt: progress.completedAt,
+            level: progress.level ?? null,
+            gridRows: progress.gridRows ?? null,
+            gridCols: progress.gridCols ?? null,
           }
         : null,
     });

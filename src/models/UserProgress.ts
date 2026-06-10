@@ -7,6 +7,12 @@ export interface IUserProgress extends Document {
   placedPieceIds: string[]; // Array of piece IDs that have been correctly placed
   isCompleted: boolean;
   completedAt: Date | null;
+  // The difficulty level the user chose for this puzzle and the resulting
+  // grid they're playing. When unset, the puzzle's own gridRows/gridCols
+  // (set by the admin) are the source of truth.
+  level: string | null;
+  gridRows: number | null;
+  gridCols: number | null;
   // Lifetime counters that accumulate across every play session for this
   // user-puzzle pair.
   timePlayedSeconds: number;
@@ -39,6 +45,20 @@ const userProgressSchema = new Schema<IUserProgress>(
     completedAt: {
       type: Date,
       default: null,
+    },
+    level: {
+      type: String,
+      default: null,
+    },
+    gridRows: {
+      type: Number,
+      default: null,
+      min: 0,
+    },
+    gridCols: {
+      type: Number,
+      default: null,
+      min: 0,
     },
     timePlayedSeconds: {
       type: Number,
