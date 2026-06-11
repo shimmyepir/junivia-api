@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import { z } from "zod";
 import { User } from "../models/User.js";
+import { UserProgress } from "../models/UserProgress.js";
 import {
   generateToken,
   authenticate,
@@ -197,6 +198,35 @@ router.post(
     } catch (error) {
       console.error("Complete onboarding error:", error);
       res.status(500).json({ error: "Failed to mark onboarding complete" });
+    }
+  },
+);
+
+/**
+ * DELETE /auth/account
+ * Permanently delete the current user's account and all associated data.
+ * Required by App Store Guideline 5.1.1(v) for apps that support account
+ * creation.
+ */
+router.delete(
+  "/account",
+  authenticate,
+  async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+      const userId = req.userId;
+      if (!userId) {
+        res.status(401).json({ error: "Not authenticated" });
+        return;
+      }
+
+      // Remove all gameplay data first, then the account itself.
+      await UserProgress.deleteMany({ userId });
+      await User.findByIdAndDelete(userId);
+
+      res.json({ message: "Account deleted" });
+    } catch (error) {
+      console.error("Delete account error:", error);
+      res.status(500).json({ error: "Failed to delete account" });
     }
   },
 );
