@@ -43,7 +43,9 @@ export const authenticate = async (
       return;
     }
 
-    if (!user.isActive) {
+    // Only admin accounts require activation. App user accounts are active on
+    // sign-up and never need to be activated.
+    if (user.role === "admin" && !user.isActive) {
       res.status(403).json({ error: "Account is not activated" });
       return;
     }

@@ -54,13 +54,15 @@ router.post("/register", async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Create new user
+    // Create new user. App accounts are active immediately — only admin
+    // accounts require activation.
     const user = new User({
       email,
       firstName,
       lastName,
       passwordHash: password, // Will be hashed by pre-save hook
       role: "user",
+      isActive: true,
     });
 
     await user.save();
