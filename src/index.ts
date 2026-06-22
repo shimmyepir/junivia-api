@@ -14,6 +14,7 @@ import {
   welcomePuzzleRouter,
   subscriptionRouter,
   meRouter,
+  legalRouter,
 } from "./routes/index.js";
 
 const app = express();
@@ -39,6 +40,7 @@ app.use("/admin/puzzles", adminPuzzlesRouter);
 app.use("/admin/welcome-puzzle", adminWelcomePuzzleRouter);
 app.use("/subscription", subscriptionRouter);
 app.use("/me", meRouter);
+app.use("/legal", legalRouter);
 
 // Error handler
 app.use(
